@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"strings"
 	// "path/filepath"
+	// "io"
 	// "os"
+	"os/exec"
 	"regexp"
 	"github.com/garyburd/go-oauth"
 	"github.com/nickoneill/go-dropbox"
@@ -120,8 +122,9 @@ func rebuildSite() {
 				posts = append(posts, p)
 				out := mustache.Render(posttemplate, map[string]string{"content": p.Content, "title": p.Title})
 				
-				pubpath := slugify(fmt.Sprintf("publish/%v.html",p.Title))
-				db.PutFile(pubpath, out)
+				pubpath := slugify(fmt.Sprintf("%v.html",p.Title))
+				ioutil.WriteFile("/tmp/published/"+pubpath, []byte(out), 0600)
+				//db.PutFile(pubpath, out)
 			} else {
 				fmt.Printf("\"%v\" is marked as draft, not publishing",p.Title)
 			}
@@ -134,8 +137,11 @@ func rebuildSite() {
 	fmt.Printf("total posts: %v\n",len(posts))
 	out := mustache.Render(hometemplate, map[string]interface{}{"posts": posts})
 	
-	db.PutFile("publish/index.html",out)
-	fmt.Printf("Done publishing!\n")
+	ioutil.WriteFile("/tmp/published/index.html", []byte(out), 0600)
+	//db.PutFile("publish/index.html",out)
+	fmt.Printf("Done site generation!\n")
+	
+	rsync("/tmp/published/", "nickoneill", "nickoneill.name", "/var/www/nickoneill.name/public_html/test/")
 }
 
 func authDropbox() {
@@ -164,12 +170,23 @@ func authDropbox() {
 func slugify(orig string) string {
 	// removelist = [...]string{"a", "an", "as", "at", "before", "but", "by", "for","from","is", "in", "into", "like", "of", "off", "on", "onto","per","since", "than", "the", "this", "that", "to", "up", "via","with"}
 	
-	// for _, val := range removelist {
-	// 	remover = regexp.MustCompile("\b"+val+"\b")
-	// 	
-	// }
-	replaced := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("_"))
+	// remove wordlist
+	// replace spaces
+	replaced := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("-"))
+	// lowercase
+	replaced = strings.ToLower(replaced)
 	return string(replaced)
+}
+
+func rsync(source string, user string, host string, dest string) {
+	cmd := exec.Command("rsync", "-azv", source, user + "@" + host + ":" + dest)
+	// stdout, err := cmd.StderrPipe()
+	// go io.Copy(os.Stdout, stdout)
+
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("rsync error %v\n", err)
+	}
 }
 
 func save(fileName string, accessToken string, accessSecret string) error {
