@@ -8,15 +8,19 @@ import (
 	"encoding/json"
 	"strings"
 	// "path/filepath"
-	// "io"
-	// "os"
+	"sort"
+	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"github.com/garyburd/go-oauth"
 	"github.com/nickoneill/go-dropbox"
 	"launchpad.net/goyaml"
 	"github.com/hoisie/mustache.go"
+	"github.com/russross/blackfriday"
 )
+
+var _ = os.Stdout
 
 const app_key = "ylg2zoaj78ol2dz"
 const app_secret = "i2863bf9odkbdl7"
@@ -24,7 +28,7 @@ const callback_url = "http://www.someurl.com/callback"
 
 var (
 	db = dropbox.NewClient(app_key, app_secret)
-	lastbuild = time.Now()
+	lastbuild = time.Now().Add(-2*time.Hour)
 	// creds = new(oauth.Credentials)
 )
 
@@ -32,11 +36,47 @@ type Chunk struct {
 	Command string
 }
 
+type RDF struct {
+	Item *PinboardItem `item`
+}
+
+type PinboardItem struct {
+	Title string
+	Link string
+	Date string `dc:date`
+	Description string
+}
+
 type Post struct {
 	Published bool
 	Title string
 	Date string
+	RFC3339Date string
 	Content string
+	Filename string
+	Atomid string
+}
+
+type PostContainer struct {
+	Posts []Post
+}
+
+func (p PostContainer) Len() int {
+	return len(p.Posts)
+}
+
+func (p PostContainer) Less(i, j int) bool {
+	idate, err := time.Parse("2006-01-02 15:04", p.Posts[i].Date)
+	if err != nil {
+		fmt.Printf("error parsing date\n")
+	}
+	jdate, err := time.Parse("2006-01-02 15:04", p.Posts[j].Date)
+	
+	return idate.After(jdate)
+}
+
+func (p PostContainer) Swap(i, j int) {
+	p.Posts[i], p.Posts[j] = p.Posts[j], p.Posts[i]
 }
 
 // main just loops and waits for jobs to return a command on a channel
@@ -90,14 +130,23 @@ func dropboxscrape(back chan *Chunk) {
 	}
 }
 
+func pinboardscape(back chan *Chunk) {
+	// http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/
+}
+
 // basic rebuild command, builds site from dropbox files and deploys to configured location
 func rebuildSite() {
 	fmt.Printf("rebuilding\n")
 	
 	posttemplate, _ := db.GetFile("templates/post.mustache")
 	hometemplate, _ := db.GetFile("templates/home.mustache")
+	feedtemplate, _ := db.GetFile("templates/feed.mustache")
+	tmppath, err := ioutil.TempDir("","gopub")
+	if err != nil {
+		fmt.Printf("error creating tmp dir: %v",err)
+	}
 	
-	posts := make([]Post,1)
+	pc := PostContainer{}
 	
 	source := db.GetFileMeta("source")
 	for _, textfile := range source.Contents {
@@ -114,19 +163,22 @@ func rebuildSite() {
 			parts := strings.SplitN(text, "---\n", 3)
 			
 			goyaml.Unmarshal([]byte(parts[1]), &p)
-			p.Content = parts[2]
+			p.Content = string(blackfriday.MarkdownCommon([]byte(parts[2])))
+			p.Filename = slugify(p.Title)+".html"
 			// TODO: check for partial yaml and fill it
 			
 			// publish individual posts, ignore drafts
 			if p.Published {
-				posts = append(posts, p)
-				out := mustache.Render(posttemplate, map[string]string{"content": p.Content, "title": p.Title})
+				date, _ := time.Parse("2006-01-02 15:04", p.Date)
+				p.RFC3339Date = date.Format(time.RFC3339)
+				p.Atomid = generateAtomId(p)
+				pc.Posts = append(pc.Posts, p)
+				out := mustache.Render(posttemplate, map[string]interface{}{"post": &p})
 				
-				pubpath := slugify(fmt.Sprintf("%v.html",p.Title))
-				ioutil.WriteFile("/tmp/published/"+pubpath, []byte(out), 0600)
+				ioutil.WriteFile(tmppath+"/"+p.Filename, []byte(out), 0644)
 				//db.PutFile(pubpath, out)
 			} else {
-				fmt.Printf("\"%v\" is marked as draft, not publishing",p.Title)
+				fmt.Printf("\"%v\" is marked as draft, not publishing\n",p.Title)
 			}
 		} else {
 			fmt.Printf("file with path \"%v\" is not a registered doc\n",textfile.Path)
@@ -134,14 +186,21 @@ func rebuildSite() {
 		}
 	}
 	
-	fmt.Printf("total posts: %v\n",len(posts))
-	out := mustache.Render(hometemplate, map[string]interface{}{"posts": posts})
+	// build the home file
+	fmt.Printf("total posts: %v\n",len(pc.Posts))
+	sort.Sort(pc)
+	home := mustache.Render(hometemplate, map[string]interface{}{"posts": pc.Posts[0:4]})
 	
-	ioutil.WriteFile("/tmp/published/index.html", []byte(out), 0600)
+	ioutil.WriteFile(tmppath+"/index.html", []byte(home), 0644)
 	//db.PutFile("publish/index.html",out)
+	
+	// build the feed file
+	feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": pc.Posts[0:10], "updated": time.Now().Format(time.RFC3339)})
+	ioutil.WriteFile(tmppath+"/atom.xml", []byte(feed), 0644)
+	
 	fmt.Printf("Done site generation!\n")
 	
-	rsync("/tmp/published/", "nickoneill", "nickoneill.name", "/var/www/nickoneill.name/public_html/test/")
+	rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/test")
 }
 
 func authDropbox() {
@@ -167,26 +226,38 @@ func authDropbox() {
 	}
 }
 
+func generateAtomId(p Post) string {
+	pre := "tag:blog.nickoneill.name,"
+	date, _ := time.Parse(time.RFC3339, p.RFC3339Date)
+	formatdate := date.Format("2006-01-15")
+	perm := ":/"+p.Filename
+	
+	return pre+formatdate+perm
+}
+
 func slugify(orig string) string {
 	// removelist = [...]string{"a", "an", "as", "at", "before", "but", "by", "for","from","is", "in", "into", "like", "of", "off", "on", "onto","per","since", "than", "the", "this", "that", "to", "up", "via","with"}
 	
 	// remove wordlist
 	// replace spaces
-	replaced := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("-"))
+	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("-"))
 	// lowercase
-	replaced = strings.ToLower(replaced)
-	return string(replaced)
+	lowercase := strings.ToLower(string(sansspaces))
+	return lowercase
 }
 
 func rsync(source string, user string, host string, dest string) {
-	cmd := exec.Command("rsync", "-azv", source, user + "@" + host + ":" + dest)
-	// stdout, err := cmd.StderrPipe()
-	// go io.Copy(os.Stdout, stdout)
+	fmt.Printf("rsync -razv "+source+" "+user+"@"+host+":"+dest+"\n")
+	
+	cmd := exec.Command("rsync", "-razv", "--chmod=u=rwX,go=rX", source, user + "@" + host + ":" + dest)
+	stdout, err := cmd.StderrPipe()
+	go io.Copy(os.Stdout, stdout)
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		fmt.Printf("rsync error %v\n", err)
 	}
+	fmt.Printf("rsync done")
 }
 
 func save(fileName string, accessToken string, accessSecret string) error {
