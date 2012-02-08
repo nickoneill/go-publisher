@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"encoding/json"
+	"encoding/xml"
 	"strings"
 	// "path/filepath"
 	"sort"
@@ -29,7 +30,6 @@ const callback_url = "http://www.someurl.com/callback"
 var (
 	db = dropbox.NewClient(app_key, app_secret)
 	lastbuild = time.Now().Add(-2*time.Hour)
-	// creds = new(oauth.Credentials)
 )
 
 type Chunk struct {
@@ -37,14 +37,16 @@ type Chunk struct {
 }
 
 type RDF struct {
-	Item *PinboardItem `item`
+	//XMLName xml.Name `xml:"rdf"`
+	Items []PinboardItem `xml:"item"`
 }
 
 type PinboardItem struct {
-	Title string
-	Link string
-	Date string `dc:date`
-	Description string
+	Title string `xml:"title"`
+	Link string `xml:"link"`
+	// Author string `xml:"creator"`
+	Date string `xml:"date"`
+	Description string `xml:"description"`
 }
 
 type Post struct {
@@ -84,12 +86,13 @@ func main() {
 	authDropbox()
 	
 	callback := make(chan *Chunk)
-	go dropboxscrape(callback)
-	// add new jobs here
+	
+	// add new document creation jobs here
+	go pinboardscape()
+	
+	go registrar(callback)
 
 	for {
-		fmt.Printf("starting loop\n")
-		
 		chunk := <-callback
 		switch chunk.Command {
 		case "republish":
@@ -98,12 +101,13 @@ func main() {
 	}
 }
 
-// this is the core job, it checks for changes in the dropbox app folder
-// every n minutes and generates a new site if there are changes
-func dropboxscrape(back chan *Chunk) {
+// this scrape manages the source directory
+// it should:
+// * automatically adding yaml front matter to things that don't have any (drafts)
+// * fill in empty data for posts have have some data
+// * issue rebuild requests for newly published documents
+func registrar(back chan *Chunk) {
 	for {
-		fmt.Printf("starting dropbox check\n")
-
 		source := db.GetFileMeta("source")
 		
 		needsrebuild := false
@@ -115,6 +119,7 @@ func dropboxscrape(back chan *Chunk) {
 			}
 			
 			if lastbuild.Before(changed) {
+				fmt.Println("dropbox source needs rebuild")
 				needsrebuild = true
 			} else {
 				// nothing
@@ -124,13 +129,42 @@ func dropboxscrape(back chan *Chunk) {
 		// TODO: only rebuild newer posts? here? in rebuild?
 		if needsrebuild {
 			back <- &Chunk{Command: "republish"}
+		} else {
+			fmt.Println("no changes in dropbox source")
 		}
 
 		time.Sleep(20*time.Second)
 	}
 }
 
-func pinboardscape(back chan *Chunk) {
+// this scrape manages an external pinboard feed
+// it should:
+// * pull content from new items
+// * generate published source documents
+func pinboardscape() {
+	for {
+		res, err := http.Get("http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/")
+		if err != nil {
+			fmt.Printf("error getting feed: %v\n",err)
+		}
+		
+		if res != nil {
+			defer res.Body.Close()
+
+			//content, err := ioutil.ReadAll(res.Body)
+			//fmt.Printf("body: %v",string(content))
+
+			feed := RDF{}
+			err = xml.Unmarshal(res.Body, &feed)
+			if err != nil {
+				fmt.Printf("feed error: %v\n",err)
+			}
+
+			fmt.Printf("feed: %v",feed)
+		}
+		
+		time.Sleep(20*time.Second)
+	}
 	// http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/
 }
 
