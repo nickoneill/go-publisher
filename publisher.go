@@ -44,8 +44,8 @@ type RDF struct {
 type PinboardItem struct {
 	Title string `xml:"title"`
 	Link string `xml:"link"`
-	// Author string `xml:"creator"`
 	Date string `xml:"date"`
+	Sourcedate string
 	Description string `xml:"description"`
 }
 
@@ -70,9 +70,12 @@ func (p PostContainer) Len() int {
 func (p PostContainer) Less(i, j int) bool {
 	idate, err := time.Parse("2006-01-02 15:04", p.Posts[i].Date)
 	if err != nil {
-		fmt.Printf("error parsing date\n")
+		fmt.Printf("error parsing date for i: %v\n",err)
 	}
 	jdate, err := time.Parse("2006-01-02 15:04", p.Posts[j].Date)
+	if err != nil {
+		fmt.Printf("error parsing date for j: %v\n",err)
+	}
 	
 	return idate.After(jdate)
 }
@@ -108,6 +111,8 @@ func main() {
 // * issue rebuild requests for newly published documents
 func registrar(back chan *Chunk) {
 	for {
+		time.Sleep(20*time.Second)
+		
 		source := db.GetFileMeta("source")
 		
 		needsrebuild := false
@@ -132,8 +137,6 @@ func registrar(back chan *Chunk) {
 		} else {
 			fmt.Println("no changes in dropbox source")
 		}
-
-		time.Sleep(20*time.Second)
 	}
 }
 
@@ -143,7 +146,8 @@ func registrar(back chan *Chunk) {
 // * generate published source documents
 func pinboardscape() {
 	for {
-		res, err := http.Get("http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/")
+		fmt.Printf("fetching pinboard feed\n")
+		res, err := http.Get("http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:nickoneillblog/")
 		if err != nil {
 			fmt.Printf("error getting feed: %v\n",err)
 		}
@@ -160,7 +164,31 @@ func pinboardscape() {
 				fmt.Printf("feed error: %v\n",err)
 			}
 
-			fmt.Printf("feed: %v",feed)
+			// fmt.Printf("feed: %v\n",feed)
+			
+			sourcetemplate, err := ioutil.ReadFile("templates/source.mustache")
+			if err != nil {
+				fmt.Printf("error getting source template: %v\n",err)
+			}
+			
+			for _, item := range feed.Items {
+				itemdate, err := time.Parse(time.RFC3339, item.Date)
+				fmt.Printf("itemdate: %v\n",itemdate.Format(time.RFC3339))
+				if err != nil {
+					fmt.Printf("error parsing item date: %v\n",err)
+				}
+				item.Sourcedate = itemdate.Format("2006-01-02 15:04")
+				fmt.Printf("sourcedate: %v\n",item.Sourcedate)
+				
+				lastitem := time.Now().Add(-2*time.Hour)
+				if lastitem.Before(itemdate) {
+					fmt.Printf("new pinboard post with name: %v\n",item.Title)
+					filename := slugify(item.Title)
+					
+					out := mustache.Render(string(sourcetemplate), map[string]interface{}{"post": &item})
+					db.PutFile("source/"+filename+".md", out)
+				}
+			}
 		}
 		
 		time.Sleep(20*time.Second)
@@ -229,7 +257,13 @@ func rebuildSite() {
 	//db.PutFile("publish/index.html",out)
 	
 	// build the feed file
-	feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": pc.Posts[0:10], "updated": time.Now().Format(time.RFC3339)})
+	feedposts := []Post{}
+	if len(pc.Posts) < 10 {
+		feedposts = pc.Posts[:]
+	} else {
+		feedposts = pc.Posts[:10]
+	}
+	feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
 	ioutil.WriteFile(tmppath+"/atom.xml", []byte(feed), 0644)
 	
 	fmt.Printf("Done site generation!\n")
