@@ -15,4 +15,18 @@ Also, go-publisher is a dumb name. It needs something clever.
 
 ### Setup
 
+Not compatible with the latest weekly yet (I haven't figured out how to properly use GOPATH yet). It should work with any of the weekly releases from some time in November until 2012-01-20.
+
 Install the 
+
+`goinstall github.com/garyburd/go-oauth`
+`goinstall github.com/nickoneill/go-dropbox`
+`goinstall launchpad.net/goyaml`
+
+`git clone https://github.com/hoisie/mustache.go.git`
+apply patch at https://github.com/jeffbr13/mustache.go/commit/33acde5032d6c4c7f33cb80ee4812559b1a9f2a0
+`gomake install`
+
+`git clone https://github.com/russross/blackfriday.git`
+apply patch at https://github.com/jteeuwen/blackfriday/commit/ec0ed69226d5280b2a41d8a4990acccfb4360ce5
+`gomake install`
