@@ -1,0 +1,4 @@
+{
+	"DropboxKey":"PUTYERKEYHERE",
+	"DropboxSecret":"PUTYERSECRETHERE",
+}
