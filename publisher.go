@@ -23,17 +23,26 @@ import (
 
 var _ = os.Stdout
 
-const app_key = "ylg2zoaj78ol2dz"
-const app_secret = "i2863bf9odkbdl7"
+// const app_key = "ylg2zoaj78ol2dz"
+// const app_secret = "i2863bf9odkbdl7"
 const callback_url = "http://www.someurl.com/callback"
 
 var (
-	db = dropbox.NewClient(app_key, app_secret)
-	lastbuild = time.Now().Add(-2*time.Hour)
+	config Config
+	db *dropbox.DropboxClient
+	//lastbuild = time.Now().Add(-2*time.Hour)
 )
 
 type Chunk struct {
 	Command string
+}
+
+type Config struct {
+	DropboxKey string
+	DropboxSecret string
+	OauthCredentials *oauth.Credentials
+	LastBuildTime string
+	LastPinboardCheck string
 }
 
 type RDF struct {
@@ -86,20 +95,33 @@ func (p PostContainer) Swap(i, j int) {
 
 // main just loops and waits for jobs to return a command on a channel
 func main() {
-	authDropbox()
+	load("config.json")
 	
-	callback := make(chan *Chunk)
-	
-	// add new document creation jobs here
-	go pinboardscape()
-	
-	go registrar(callback)
+	if config.DropboxKey == "PUTYERKEYHERE" || config.DropboxKey == "" {
+		fmt.Println("You need to add your dropbox key to config")
+	} else {
+		db = dropbox.NewClient(config.DropboxKey, config.DropboxSecret)
+		
+		if config.OauthCredentials.Token != "" {
+			db.Creds = config.OauthCredentials
+		} else {
+			authDropbox()
+			db.Creds = config.OauthCredentials
+		}
 
-	for {
-		chunk := <-callback
-		switch chunk.Command {
-		case "republish":
-			go rebuildSite()
+		callback := make(chan *Chunk)
+
+		// add new document creation jobs here
+		go pinboardscape()
+
+		go registrar(callback)
+
+		for {
+			chunk := <-callback
+			switch chunk.Command {
+			case "republish":
+				go rebuildSite()
+			}
 		}
 	}
 }
@@ -111,31 +133,38 @@ func main() {
 // * issue rebuild requests for newly published documents
 func registrar(back chan *Chunk) {
 	for {
-		time.Sleep(20*time.Second)
+		time.Sleep(40*time.Second)
 		
-		source := db.GetFileMeta("source")
-		
-		needsrebuild := false
-		for _, textfile := range source.Contents {
-			// check each file for its modified date vs our last build date
-			changed, err := time.Parse(time.RFC1123Z, textfile.Modified)
-			if err != nil {
-				fmt.Printf("error parsing modified date %v",err)
+		if config.OauthCredentials.Token != "" {
+			source := db.GetFileMeta("source")
+
+			needsrebuild := false
+			for _, textfile := range source.Contents {
+				// check each file for its modified date vs our last build date
+				changed, err := time.Parse(time.RFC1123Z, textfile.Modified)
+				if err != nil {
+					fmt.Printf("error parsing modified date %v",err)
+				}
+
+				lastbuild, _ := time.Parse(time.RFC3339, config.LastBuildTime)
+				if lastbuild.Before(changed) {
+					fmt.Println("dropbox source needs rebuild")
+					needsrebuild = true
+				} else {
+					// nothing
+				}
 			}
-			
-			if lastbuild.Before(changed) {
-				fmt.Println("dropbox source needs rebuild")
-				needsrebuild = true
+
+			// TODO: only rebuild newer posts? here? in rebuild?
+			if needsrebuild {
+				config.LastBuildTime = time.Now().Format(time.RFC3339)
+				_ = save("config.json")
+				back <- &Chunk{Command: "republish"}
 			} else {
-				// nothing
+				fmt.Println("no changes to be rebuilt")
 			}
-		}
-		
-		// TODO: only rebuild newer posts? here? in rebuild?
-		if needsrebuild {
-			back <- &Chunk{Command: "republish"}
 		} else {
-			fmt.Println("no changes in dropbox source")
+			fmt.Println("no dropbox creds, not checking")
 		}
 	}
 }
@@ -163,14 +192,13 @@ func pinboardscape() {
 			if err != nil {
 				fmt.Printf("feed error: %v\n",err)
 			}
-
-			// fmt.Printf("feed: %v\n",feed)
 			
 			sourcetemplate, err := ioutil.ReadFile("templates/source.mustache")
 			if err != nil {
 				fmt.Printf("error getting source template: %v\n",err)
 			}
 			
+			lasttime, _ := time.Parse(time.RFC3339, config.LastPinboardCheck)
 			for _, item := range feed.Items {
 				itemdate, err := time.Parse(time.RFC3339, item.Date)
 				fmt.Printf("itemdate: %v\n",itemdate.Format(time.RFC3339))
@@ -180,8 +208,8 @@ func pinboardscape() {
 				item.Sourcedate = itemdate.Format("2006-01-02 15:04")
 				fmt.Printf("sourcedate: %v\n",item.Sourcedate)
 				
-				lastitem := time.Now().Add(-2*time.Hour)
-				if lastitem.Before(itemdate) {
+
+				if lasttime.Before(itemdate) {
 					fmt.Printf("new pinboard post with name: %v\n",item.Title)
 					filename := slugify(item.Title)
 					
@@ -190,8 +218,10 @@ func pinboardscape() {
 				}
 			}
 		}
+		config.LastPinboardCheck = time.Now().Format(time.RFC3339)
+		_ = save("config.json")
 		
-		time.Sleep(20*time.Second)
+		time.Sleep(5*time.Minute)
 	}
 	// http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/
 }
@@ -248,10 +278,17 @@ func rebuildSite() {
 		}
 	}
 	
-	// build the home file
 	fmt.Printf("total posts: %v\n",len(pc.Posts))
 	sort.Sort(pc)
-	home := mustache.Render(hometemplate, map[string]interface{}{"posts": pc.Posts[0:4]})
+	
+	// build the home file
+	homeposts := []Post{}
+	if len(pc.Posts) < 10 {
+		homeposts = pc.Posts[:]
+	} else {
+		homeposts = pc.Posts[:6]
+	}
+	home := mustache.Render(hometemplate, map[string]interface{}{"posts": homeposts})
 	
 	ioutil.WriteFile(tmppath+"/index.html", []byte(home), 0644)
 	//db.PutFile("publish/index.html",out)
@@ -272,26 +309,22 @@ func rebuildSite() {
 }
 
 func authDropbox() {
-	savedcreds, err := load("config.json")
+	tempcred, err := db.Oauth.RequestTemporaryCredentials(http.DefaultClient, callback_url)
 	if err != nil {
-		tempcred, err := db.Oauth.RequestTemporaryCredentials(http.DefaultClient, callback_url)
-		if err != nil {
-			fmt.Printf("err! %v", err)
-			return
-		}
-
-		url := db.Oauth.AuthorizationURL(tempcred)
-		fmt.Printf("auth url: %v\n", url)
-
-		time.Sleep(15e9)
-
-		newcreds, _, err := db.Oauth.RequestToken(http.DefaultClient, tempcred, "")
-		err = save("config.json", newcreds.Token, newcreds.Secret)
-		db.Creds = newcreds
-	} else {
-		//fmt.Printf("loaded creds: %v\n", savedcreds)
-		db.Creds = savedcreds
+		fmt.Printf("err! %v", err)
+		return
 	}
+
+	url := db.Oauth.AuthorizationURL(tempcred)
+	fmt.Printf("you have 20 seconds to visit this auth url in your browser: %v\n", url)
+
+	time.Sleep(20*time.Second)
+	fmt.Println("requesting permanent credentials")
+
+	newcreds, _, err := db.Oauth.RequestToken(http.DefaultClient, tempcred, "")
+	config.OauthCredentials = newcreds
+	db.Creds = newcreds
+	_ = save("config.json")
 }
 
 func generateAtomId(p Post) string {
@@ -306,7 +339,7 @@ func generateAtomId(p Post) string {
 func slugify(orig string) string {
 	// removelist = [...]string{"a", "an", "as", "at", "before", "but", "by", "for","from","is", "in", "into", "like", "of", "off", "on", "onto","per","since", "than", "the", "this", "that", "to", "up", "via","with"}
 	
-	// remove wordlist
+	// TODO: remove wordlist
 	// replace spaces
 	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("-"))
 	// lowercase
@@ -325,15 +358,10 @@ func rsync(source string, user string, host string, dest string) {
 	if err != nil {
 		fmt.Printf("rsync error %v\n", err)
 	}
-	fmt.Printf("rsync done")
+	fmt.Println("rsync done")
 }
 
-func save(fileName string, accessToken string, accessSecret string) error {
-	config := oauth.Credentials{
-		Token:  accessToken,
-		Secret: accessSecret,
-	}
-
+func save(fileName string) error {
 	b, err := json.Marshal(config)
 	if err != nil {
 		return err
@@ -347,17 +375,16 @@ func save(fileName string, accessToken string, accessSecret string) error {
 	return nil
 }
 
-func load(fileName string) (*oauth.Credentials, error) {
+func load(fileName string) error {
 	b, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	config := new(oauth.Credentials)
 
 	err = json.Unmarshal(b, &config)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return config, nil
+	
+	return nil
 }
