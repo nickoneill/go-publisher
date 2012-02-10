@@ -133,7 +133,7 @@ func main() {
 // * issue rebuild requests for newly published documents
 func registrar(back chan *Chunk) {
 	for {
-		time.Sleep(40*time.Second)
+		time.Sleep(5*time.Minute)
 		
 		if config.OauthCredentials.Token != "" {
 			source := db.GetFileMeta("source")
@@ -221,7 +221,7 @@ func pinboardscape() {
 		config.LastPinboardCheck = time.Now().Format(time.RFC3339)
 		_ = save("config.json")
 		
-		time.Sleep(5*time.Minute)
+		time.Sleep(4*time.Minute)
 	}
 	// http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/
 }
