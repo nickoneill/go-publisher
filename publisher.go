@@ -43,6 +43,7 @@ type Config struct {
 	OauthCredentials *oauth.Credentials
 	LastBuildTime string
 	LastPinboardCheck string
+	Debug bool
 }
 
 type RDF struct {
@@ -133,13 +134,18 @@ func main() {
 // * issue rebuild requests for newly published documents
 func registrar(back chan *Chunk) {
 	for {
-		time.Sleep(5*time.Minute)
+		if config.Debug {
+			time.Sleep(20*time.Second)
+		} else {
+			time.Sleep(5*time.Minute)
+		}
 		
 		if config.OauthCredentials.Token != "" {
 			source := db.GetFileMeta("source")
 
 			needsrebuild := false
 			for _, textfile := range source.Contents {
+				//fmt.Printf("item in folder %v\n",textfile.Path)
 				// check each file for its modified date vs our last build date
 				changed, err := time.Parse(time.RFC1123Z, textfile.Modified)
 				if err != nil {
@@ -148,6 +154,7 @@ func registrar(back chan *Chunk) {
 
 				lastbuild, _ := time.Parse(time.RFC3339, config.LastBuildTime)
 				if lastbuild.Before(changed) {
+					// TODO: check if the file is published before we decide we should republish
 					fmt.Println("dropbox source needs rebuild")
 					needsrebuild = true
 				} else {
@@ -181,6 +188,7 @@ func pinboardscape() {
 			fmt.Printf("error getting feed: %v\n",err)
 		}
 		
+		newlast := time.Time{}
 		if res != nil {
 			defer res.Body.Close()
 
@@ -201,14 +209,19 @@ func pinboardscape() {
 			lasttime, _ := time.Parse(time.RFC3339, config.LastPinboardCheck)
 			for _, item := range feed.Items {
 				itemdate, err := time.Parse(time.RFC3339, item.Date)
-				fmt.Printf("itemdate: %v\n",itemdate.Format(time.RFC3339))
+				//fmt.Printf("itemdate: %v\n",itemdate.Format(time.RFC3339))
 				if err != nil {
 					fmt.Printf("error parsing item date: %v\n",err)
 				}
 				item.Sourcedate = itemdate.Format("2006-01-02 15:04")
-				fmt.Printf("sourcedate: %v\n",item.Sourcedate)
+				//fmt.Printf("sourcedate: %v\n",item.Sourcedate)
 				
-
+				// need to keep track of newest pinboard post, don't want to assume it's first
+				if newlast.Before(itemdate) {
+					newlast = itemdate
+				}
+				
+				// fmt.Printf("compare item: %v to last: %v\n",itemdate,lasttime)
 				if lasttime.Before(itemdate) {
 					fmt.Printf("new pinboard post with name: %v\n",item.Title)
 					filename := slugify(item.Title)
@@ -218,10 +231,16 @@ func pinboardscape() {
 				}
 			}
 		}
-		config.LastPinboardCheck = time.Now().Format(time.RFC3339)
+		
+		// pinboard time is subtly different, we store time of newest item processed
+		config.LastPinboardCheck = newlast.Format(time.RFC3339)
 		_ = save("config.json")
 		
-		time.Sleep(4*time.Minute)
+		if config.Debug {
+			time.Sleep(25*time.Second)
+		} else {
+			time.Sleep(4*time.Minute)
+		}
 	}
 	// http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/
 }
