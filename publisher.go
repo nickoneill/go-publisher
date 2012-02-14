@@ -152,9 +152,14 @@ func registrar(back chan *Chunk) {
 					fmt.Printf("error parsing modified date %v",err)
 				}
 				
-				if strings.HasPrefix(textfile, "---") {
+				text, err := db.GetFile(textfile.Path)
+				if err != nil {
+					fmt.Printf("error getting file text: %v\n",err)
+				}
+				
+				if strings.HasPrefix(text, "---") {
 					p := Post{}
-					parts := strings.SplitN(textfile, "---\n", 3)
+					parts := strings.SplitN(text, "---\n", 3)
 					goyaml.Unmarshal([]byte(parts[1]), &p)
 					
 					if p.Published {
