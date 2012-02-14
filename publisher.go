@@ -151,14 +151,27 @@ func registrar(back chan *Chunk) {
 				if err != nil {
 					fmt.Printf("error parsing modified date %v",err)
 				}
-
-				lastbuild, _ := time.Parse(time.RFC3339, config.LastBuildTime)
-				if lastbuild.Before(changed) {
-					// TODO: check if the file is published before we decide we should republish
-					fmt.Println("dropbox source needs rebuild")
-					needsrebuild = true
-				} else {
-					// nothing
+				
+				if strings.HasPrefix(textfile, "---") {
+					p := Post{}
+					parts := strings.SplitN(textfile, "---\n", 3)
+					goyaml.Unmarshal([]byte(parts[1]), &p)
+					
+					if p.Published {
+						if p.Date == "" {
+							fmt.Println("fill in the date on this published post")
+						}
+						if p.Title == "" {
+							fmt.Println("fill in the title on this published post")
+						}
+						
+						lastbuild, _ := time.Parse(time.RFC3339, config.LastBuildTime)
+						if lastbuild.Before(changed) {
+							// TODO: check if the file is published before we decide we should republish
+							fmt.Println("dropbox source needs rebuild")
+							needsrebuild = true
+						}
+					}
 				}
 			}
 
@@ -305,7 +318,7 @@ func rebuildSite() {
 	if len(pc.Posts) < 10 {
 		homeposts = pc.Posts[:]
 	} else {
-		homeposts = pc.Posts[:6]
+		homeposts = pc.Posts[:10]
 	}
 	home := mustache.Render(hometemplate, map[string]interface{}{"posts": homeposts})
 	
