@@ -337,7 +337,7 @@ func rebuildSite() {
 	
 	fmt.Printf("Done site generation!\n")
 	
-	rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/test")
+	rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
 }
 
 func authDropbox() {
