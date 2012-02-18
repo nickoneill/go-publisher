@@ -135,7 +135,7 @@ func main() {
 func registrar(back chan *Chunk) {
 	for {
 		if config.Debug {
-			time.Sleep(20*time.Second)
+			time.Sleep(10*time.Second)
 		} else {
 			time.Sleep(5*time.Minute)
 		}
@@ -304,7 +304,10 @@ func rebuildSite() {
 				pc.Posts = append(pc.Posts, p)
 				out := mustache.Render(posttemplate, map[string]interface{}{"post": &p})
 				
-				ioutil.WriteFile(tmppath+"/"+p.Filename, []byte(out), 0644)
+				err = ioutil.WriteFile(tmppath+"/"+p.Filename, []byte(out), 0644)
+				if err != nil {
+					fmt.Printf("error writing file: %v\n",err)
+				}
 				//db.PutFile(pubpath, out)
 			} else {
 				fmt.Printf("\"%v\" is marked as draft, not publishing\n",p.Title)
@@ -340,9 +343,11 @@ func rebuildSite() {
 	feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
 	ioutil.WriteFile(tmppath+"/atom.xml", []byte(feed), 0644)
 	
-	fmt.Printf("Done site generation!\n")
+	fmt.Printf("Done site generation at %v\n",tmppath)
 	
-	rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
+	if !config.Debug {
+		rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
+	}
 }
 
 func authDropbox() {
@@ -377,15 +382,17 @@ func slugify(orig string) string {
 	// removelist = [...]string{"a", "an", "as", "at", "before", "but", "by", "for","from","is", "in", "into", "like", "of", "off", "on", "onto","per","since", "than", "the", "this", "that", "to", "up", "via","with"}
 	
 	// TODO: remove wordlist
+	// replace invalid characters
+	noinvalid := regexp.MustCompile("[/'.]").ReplaceAll([]byte(orig), []byte(""))
 	// replace spaces
-	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("-"))
+	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll(noinvalid, []byte("-"))
 	// lowercase
 	lowercase := strings.ToLower(string(sansspaces))
 	return lowercase
 }
 
 func rsync(source string, user string, host string, dest string) {
-	fmt.Printf("rsync -razv "+source+" "+user+"@"+host+":"+dest+"\n")
+	fmt.Printf("rsync -razv \""+source+"\" "+user+"@"+host+":"+dest+"\n")
 	
 	cmd := exec.Command("rsync", "-razv", "--chmod=u=rwX,go=rX", source, user + "@" + host + ":" + dest)
 	stdout, err := cmd.StderrPipe()
