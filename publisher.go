@@ -298,7 +298,10 @@ func rebuildSite() {
 			
 			// publish individual posts, ignore drafts
 			if p.Published {
-				date, _ := time.Parse("2006-01-02 15:04", p.Date)
+				date, err := time.Parse("2006-01-02 15:04", p.Date)
+				if err != nil {
+					fmt.Printf("Can't parse date for this post: %v\n",p.Date)
+				}
 				p.RFC3339Date = date.Format(time.RFC3339)
 				p.Atomid = generateAtomId(p)
 				pc.Posts = append(pc.Posts, p)
@@ -392,7 +395,7 @@ func slugify(orig string) string {
 }
 
 func rsync(source string, user string, host string, dest string) {
-	fmt.Printf("rsync -razv \""+source+"\" "+user+"@"+host+":"+dest+"\n")
+	fmt.Printf("rsync -razv "+source+" "+user+"@"+host+":"+dest+"\n")
 	
 	cmd := exec.Command("rsync", "-razv", "--chmod=u=rwX,go=rX", source, user + "@" + host + ":" + dest)
 	stdout, err := cmd.StderrPipe()
