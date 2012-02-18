@@ -395,7 +395,7 @@ func slugify(orig string) string {
 }
 
 func rsync(source string, user string, host string, dest string) {
-	fmt.Printf("rsync -razv "+source+" "+user+"@"+host+":"+dest+"\n")
+	fmt.Printf("rsync -azv "+source+" "+user+"@"+host+":"+dest+"\n")
 	
 	cmd := exec.Command("rsync", "-razv", "--chmod=u=rwX,go=rX", source, user + "@" + host + ":" + dest)
 	stdout, err := cmd.StderrPipe()
