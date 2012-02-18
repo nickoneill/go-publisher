@@ -346,7 +346,7 @@ func rebuildSite() {
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
 	if !config.Debug {
-		rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
+		rsync(tmppath+"/*", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
 	}
 }
 
