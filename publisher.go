@@ -23,9 +23,7 @@ import (
 
 var _ = os.Stdout
 
-// const app_key = "ylg2zoaj78ol2dz"
-// const app_secret = "i2863bf9odkbdl7"
-const callback_url = "http://www.someurl.com/callback"
+		const callback_url = "http://www.someurl.com/callback"
 
 var (
 	config Config
@@ -386,7 +384,7 @@ func slugify(orig string) string {
 	
 	// TODO: remove wordlist
 	// replace invalid characters
-	noinvalid := regexp.MustCompile("[/'.]").ReplaceAll([]byte(orig), []byte(""))
+	noinvalid := regexp.MustCompile("[/'.?\"]").ReplaceAll([]byte(orig), []byte(""))
 	// replace spaces
 	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll(noinvalid, []byte("-"))
 	// lowercase
