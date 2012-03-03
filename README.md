@@ -21,10 +21,10 @@ Compatible with the latest weeklies from Go (what will soon be Go 1), possibly g
 
 For installation, run these commands to install the dependencies in your preferred GOPATH.
 
-`go get github.com/garyburd/go-oauth`
-`go get github.com/nickoneill/go-dropbox`
-`go get launchpad.net/goyaml`
-`go get github.com/russross/blackfriday`
-`go get github.com/drhodes/mustache.go`
+`go get github.com/garyburd/go-oauth
+go get github.com/nickoneill/go-dropbox
+go get launchpad.net/goyaml
+go get github.com/russross/blackfriday
+go get github.com/drhodes/mustache.go`
 
 And finally `go run publisher.go` to get things started.
