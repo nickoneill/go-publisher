@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"strings"
+	"bytes"
 	// "path/filepath"
 	"sort"
 	"io"
@@ -17,13 +18,12 @@ import (
 	"github.com/garyburd/go-oauth"
 	"github.com/nickoneill/go-dropbox"
 	"launchpad.net/goyaml"
-	"github.com/hoisie/mustache.go"
+	"html/template"
+	// "github.com/hoisie/mustache.go"
 	"github.com/russross/blackfriday"
 )
 
 var _ = os.Stdout
-
-		const callback_url = "http://www.someurl.com/callback"
 
 var (
 	config Config
@@ -100,6 +100,7 @@ func main() {
 		fmt.Println("You need to add your dropbox key to config")
 	} else {
 		db = dropbox.NewClient(config.DropboxKey, config.DropboxSecret)
+		db.Token = "NO"
 		
 		if config.OauthCredentials.Token != "" {
 			db.Creds = config.OauthCredentials
@@ -207,20 +208,25 @@ func pinboardscape() {
 		newlast := time.Time{}
 		if res != nil {
 			defer res.Body.Close()
+			body, err := ioutil.ReadAll(res.Body)
+			if err != nil {
+				fmt.Println("Couldn't read response: %v",err)
+			}
 
 			//content, err := ioutil.ReadAll(res.Body)
 			//fmt.Printf("body: %v",string(content))
 
 			feed := RDF{}
-			err = xml.Unmarshal(res.Body, &feed)
+			err = xml.Unmarshal(body, &feed)
 			if err != nil {
 				fmt.Printf("feed error: %v\n",err)
 			}
 			
-			sourcetemplate, err := ioutil.ReadFile("templates/source.mustache")
+			sourcetemplate, err := template.ParseFiles("templates/source.mustache")//ioutil.ReadFile("templates/source.mustache")
 			if err != nil {
 				fmt.Printf("error getting source template: %v\n",err)
 			}
+			// fmt.Printf()
 			
 			lasttime, _ := time.Parse(time.RFC3339, config.LastPinboardCheck)
 			for _, item := range feed.Items {
@@ -242,8 +248,10 @@ func pinboardscape() {
 					fmt.Printf("new pinboard post with name: %v\n",item.Title)
 					filename := slugify(item.Title)
 					
-					out := mustache.Render(string(sourcetemplate), map[string]interface{}{"post": &item})
-					db.PutFile("source/"+filename+".md", out)
+					var buf bytes.Buffer
+					_ = sourcetemplate.Execute(&buf, map[string]interface{}{"post": &item})
+					// out := mustache.Render(string(sourcetemplate), map[string]interface{}{"post": &item})
+					db.PutFile("source/"+filename+".md", buf.String())
 				}
 			}
 		}
@@ -265,9 +273,13 @@ func pinboardscape() {
 func rebuildSite() {
 	fmt.Printf("rebuilding\n")
 	
-	posttemplate, _ := db.GetFile("templates/post.mustache")
-	hometemplate, _ := db.GetFile("templates/home.mustache")
-	feedtemplate, _ := db.GetFile("templates/feed.mustache")
+	posttemplatestring, _ := db.GetFile("templates/post.mustache")
+	posttemplate, err := template.New("post").Parse(posttemplatestring)
+	hometemplatestring, _ := db.GetFile("templates/home.mustache")
+	hometemplate, err := template.New("home").Parse(hometemplatestring)
+	feedtemplatestring, _ := db.GetFile("templates/feed.mustache")
+	feedtemplate, err := template.New("feed").Parse(feedtemplatestring)
+	
 	tmppath, err := ioutil.TempDir("","gopub")
 	if err != nil {
 		fmt.Printf("error creating tmp dir: %v",err)
@@ -303,9 +315,12 @@ func rebuildSite() {
 				p.RFC3339Date = date.Format(time.RFC3339)
 				p.Atomid = generateAtomId(p)
 				pc.Posts = append(pc.Posts, p)
-				out := mustache.Render(posttemplate, map[string]interface{}{"post": &p})
 				
-				err = ioutil.WriteFile(tmppath+"/"+p.Filename, []byte(out), 0644)
+				var buf bytes.Buffer
+				_ = posttemplate.Execute(&buf, map[string]interface{}{"post": &p})
+				// out := mustache.Render(posttemplate, map[string]interface{}{"post": &p})
+				
+				err = ioutil.WriteFile(tmppath+"/"+p.Filename, buf.Bytes(), 0644)
 				if err != nil {
 					fmt.Printf("error writing file: %v\n",err)
 				}
@@ -329,9 +344,12 @@ func rebuildSite() {
 	} else {
 		homeposts = pc.Posts[:10]
 	}
-	home := mustache.Render(hometemplate, map[string]interface{}{"posts": homeposts})
 	
-	ioutil.WriteFile(tmppath+"/index.html", []byte(home), 0644)
+	var homebuf bytes.Buffer
+	_ = hometemplate.Execute(&homebuf, map[string]interface{}{"posts": homeposts})
+	// home := mustache.Render(hometemplate, map[string]interface{}{"posts": homeposts})
+	
+	ioutil.WriteFile(tmppath+"/index.html", homebuf.Bytes(), 0644)
 	//db.PutFile("publish/index.html",out)
 	
 	// build the feed file
@@ -341,8 +359,11 @@ func rebuildSite() {
 	} else {
 		feedposts = pc.Posts[:10]
 	}
-	feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
-	ioutil.WriteFile(tmppath+"/atom.xml", []byte(feed), 0644)
+	
+	var feedbuf bytes.Buffer
+	_ = feedtemplate.Execute(&feedbuf, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
+	// feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
+	ioutil.WriteFile(tmppath+"/atom.xml", feedbuf.Bytes(), 0644)
 	
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
@@ -352,13 +373,13 @@ func rebuildSite() {
 }
 
 func authDropbox() {
-	tempcred, err := db.Oauth.RequestTemporaryCredentials(http.DefaultClient, callback_url)
+	tempcred, err := db.Oauth.RequestTemporaryCredentials(http.DefaultClient, "", nil)
 	if err != nil {
 		fmt.Printf("err! %v", err)
 		return
 	}
 
-	url := db.Oauth.AuthorizationURL(tempcred)
+	url := db.Oauth.AuthorizationURL(tempcred, nil)
 	fmt.Printf("you have 20 seconds to visit this auth url in your browser: %v\n", url)
 
 	time.Sleep(20*time.Second)
@@ -383,19 +404,19 @@ func slugify(orig string) string {
 	// removelist = [...]string{"a", "an", "as", "at", "before", "but", "by", "for","from","is", "in", "into", "like", "of", "off", "on", "onto","per","since", "than", "the", "this", "that", "to", "up", "via","with"}
 	
 	// TODO: remove wordlist
-	// replace invalid characters
-	noinvalid := regexp.MustCompile("[/'.?\"]").ReplaceAll([]byte(orig), []byte(""))
 	// replace spaces
-	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll(noinvalid, []byte("-"))
+	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("-"))
+	// replace invalid characters
+	noinvalid := regexp.MustCompile("\\W").ReplaceAll(sansspaces, []byte(""))
 	// lowercase
-	lowercase := strings.ToLower(string(sansspaces))
+	lowercase := strings.ToLower(string(noinvalid))
 	return lowercase
 }
 
 func rsync(source string, user string, host string, dest string) {
 	fmt.Printf("rsync -azv "+source+" "+user+"@"+host+":"+dest+"\n")
 	
-	cmd := exec.Command("rsync", "-razv", "--chmod=u=rwX,go=rX", source, user + "@" + host + ":" + dest)
+	cmd := exec.Command("rsync", "-azv", source, user + "@" + host + ":" + dest)
 	stdout, err := cmd.StderrPipe()
 	go io.Copy(os.Stdout, stdout)
 
