@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"strings"
-	"bytes"
 	// "path/filepath"
 	"sort"
 	"io"
@@ -18,7 +17,7 @@ import (
 	"github.com/garyburd/go-oauth"
 	"github.com/nickoneill/go-dropbox"
 	"launchpad.net/goyaml"
-	"html/template"
+	"github.com/drhodes/mustache.go"
 	// "github.com/hoisie/mustache.go"
 	"github.com/russross/blackfriday"
 )
@@ -222,11 +221,10 @@ func pinboardscape() {
 				fmt.Printf("feed error: %v\n",err)
 			}
 			
-			sourcetemplate, err := template.ParseFiles("templates/source.mustache")//ioutil.ReadFile("templates/source.mustache")
+			sourcetemplate, err := ioutil.ReadFile("templates/source.mustache")
 			if err != nil {
 				fmt.Printf("error getting source template: %v\n",err)
 			}
-			// fmt.Printf()
 			
 			lasttime, _ := time.Parse(time.RFC3339, config.LastPinboardCheck)
 			for _, item := range feed.Items {
@@ -248,10 +246,8 @@ func pinboardscape() {
 					fmt.Printf("new pinboard post with name: %v\n",item.Title)
 					filename := slugify(item.Title)
 					
-					var buf bytes.Buffer
-					_ = sourcetemplate.Execute(&buf, map[string]interface{}{"post": &item})
-					// out := mustache.Render(string(sourcetemplate), map[string]interface{}{"post": &item})
-					db.PutFile("source/"+filename+".md", buf.String())
+					out := mustache.Render(string(sourcetemplate), map[string]interface{}{"post": &item})
+					db.PutFile("source/"+filename+".md", out)
 				}
 			}
 		}
@@ -273,12 +269,9 @@ func pinboardscape() {
 func rebuildSite() {
 	fmt.Printf("rebuilding\n")
 	
-	posttemplatestring, _ := db.GetFile("templates/post.mustache")
-	posttemplate, err := template.New("post").Parse(posttemplatestring)
-	hometemplatestring, _ := db.GetFile("templates/home.mustache")
-	hometemplate, err := template.New("home").Parse(hometemplatestring)
-	feedtemplatestring, _ := db.GetFile("templates/feed.mustache")
-	feedtemplate, err := template.New("feed").Parse(feedtemplatestring)
+	posttemplate, _ := db.GetFile("templates/post.mustache")
+	hometemplate, _ := db.GetFile("templates/home.mustache")
+	feedtemplate, _ := db.GetFile("templates/feed.mustache")
 	
 	tmppath, err := ioutil.TempDir("","gopub")
 	if err != nil {
@@ -316,11 +309,9 @@ func rebuildSite() {
 				p.Atomid = generateAtomId(p)
 				pc.Posts = append(pc.Posts, p)
 				
-				var buf bytes.Buffer
-				_ = posttemplate.Execute(&buf, map[string]interface{}{"post": &p})
-				// out := mustache.Render(posttemplate, map[string]interface{}{"post": &p})
+				out := mustache.Render(posttemplate, map[string]interface{}{"post": &p})
 				
-				err = ioutil.WriteFile(tmppath+"/"+p.Filename, buf.Bytes(), 0644)
+				err = ioutil.WriteFile(tmppath+"/"+p.Filename, []byte(out), 0644)
 				if err != nil {
 					fmt.Printf("error writing file: %v\n",err)
 				}
@@ -345,11 +336,9 @@ func rebuildSite() {
 		homeposts = pc.Posts[:10]
 	}
 	
-	var homebuf bytes.Buffer
-	_ = hometemplate.Execute(&homebuf, map[string]interface{}{"posts": homeposts})
-	// home := mustache.Render(hometemplate, map[string]interface{}{"posts": homeposts})
+	home := mustache.Render(hometemplate, map[string]interface{}{"posts": homeposts})
 	
-	ioutil.WriteFile(tmppath+"/index.html", homebuf.Bytes(), 0644)
+	ioutil.WriteFile(tmppath+"/index.html", []byte(home), 0644)
 	//db.PutFile("publish/index.html",out)
 	
 	// build the feed file
@@ -360,10 +349,8 @@ func rebuildSite() {
 		feedposts = pc.Posts[:10]
 	}
 	
-	var feedbuf bytes.Buffer
-	_ = feedtemplate.Execute(&feedbuf, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
-	// feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
-	ioutil.WriteFile(tmppath+"/atom.xml", feedbuf.Bytes(), 0644)
+	feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
+	ioutil.WriteFile(tmppath+"/atom.xml", []byte(feed), 0644)
 	
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
@@ -401,16 +388,18 @@ func generateAtomId(p Post) string {
 }
 
 func slugify(orig string) string {
+	slug := []byte(orig)
 	// removelist = [...]string{"a", "an", "as", "at", "before", "but", "by", "for","from","is", "in", "into", "like", "of", "off", "on", "onto","per","since", "than", "the", "this", "that", "to", "up", "via","with"}
 	
 	// TODO: remove wordlist
 	// replace spaces
-	sansspaces := regexp.MustCompile("[\\s]").ReplaceAll([]byte(orig), []byte("-"))
+	slug = regexp.MustCompile("[\\s]").ReplaceAll(slug, []byte("_"))
 	// replace invalid characters
-	noinvalid := regexp.MustCompile("\\W").ReplaceAll(sansspaces, []byte(""))
+	slug = regexp.MustCompile("\\W").ReplaceAll(slug, []byte(""))
+	// I like dashes
+	slug = regexp.MustCompile("[_]").ReplaceAll(slug, []byte("-"))
 	// lowercase
-	lowercase := strings.ToLower(string(noinvalid))
-	return lowercase
+	return strings.ToLower(string(slug))
 }
 
 func rsync(source string, user string, host string, dest string) {
