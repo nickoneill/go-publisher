@@ -4,6 +4,8 @@ I've always disliked the dumb interfaces for blog tools that give me 99% more ba
 
 This publishing framework fixes these issues for me. I write markdown files that are saved to Dropbox so I can edit or create a post from almost any device. New posts are automatically detected, site files built and transferred to my server without me having to click any buttons or tweak any settings. Additionally, new links in Pinboard with a certain tag are pulled in and saved as posts at regular intervals. Just. Fucking. Write.
 
+See the longer form post I wrote on this kind of thing [on my blog](http://blog.nickoneill.name/this-is-how-i-blog.html).
+
 Also, go-publisher is a dumb name. It needs something clever.
 
 ### Foundations:
@@ -15,20 +17,14 @@ Also, go-publisher is a dumb name. It needs something clever.
 
 ### Setup
 
-Not compatible with the latest weekly yet (I haven't figured out how to properly use GOPATH yet). It should work with any of the weekly releases from some time in November until 2012-01-20.
+Compatible with the latest weeklies from Go (what will soon be Go 1), possibly going back into the November 2011 releases. Definitely *not* compatible with last major release r60.
 
-Install:
+For installation, run these commands to install the dependencies in your preferred GOPATH.
 
-`goinstall github.com/garyburd/go-oauth`
-`goinstall github.com/nickoneill/go-dropbox`
-`goinstall launchpad.net/goyaml`
+`go get github.com/garyburd/go-oauth`
+`go get github.com/nickoneill/go-dropbox`
+`go get launchpad.net/goyaml`
+`go get github.com/russross/blackfriday`
+`go get github.com/drhodes/mustache.go`
 
-`git clone https://github.com/hoisie/mustache.go.git`
-apply patch at https://github.com/jeffbr13/mustache.go/commit/33acde5032d6c4c7f33cb80ee4812559b1a9f2a0
-`gomake install`
-
-`git clone https://github.com/russross/blackfriday.git`
-apply patch at https://github.com/jteeuwen/blackfriday/commit/ec0ed69226d5280b2a41d8a4990acccfb4360ce5
-`gomake install`
-
-Then clone the go-publisher code, `gomake` and start it with `./publisher`. I suggest starting a screen session and detaching so you can run the tool all the time.
+And finally `go run publisher.go` to get things started.
