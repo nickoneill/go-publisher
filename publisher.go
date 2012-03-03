@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"strings"
-	// "path/filepath"
 	"sort"
 	"io"
 	"os"
@@ -18,7 +17,6 @@ import (
 	"github.com/nickoneill/go-dropbox"
 	"launchpad.net/goyaml"
 	"github.com/drhodes/mustache.go"
-	// "github.com/hoisie/mustache.go"
 	"github.com/russross/blackfriday"
 )
 
@@ -262,7 +260,6 @@ func pinboardscape() {
 			time.Sleep(4*time.Minute)
 		}
 	}
-	// http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:apple/
 }
 
 // basic rebuild command, builds site from dropbox files and deploys to configured location
