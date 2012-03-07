@@ -25,7 +25,6 @@ var _ = os.Stdout
 var (
 	config Config
 	db *dropbox.DropboxClient
-	//lastbuild = time.Now().Add(-2*time.Hour)
 )
 
 type Chunk struct {
@@ -352,6 +351,7 @@ func rebuildSite() {
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
 	if !config.Debug {
+		time.Sleep(1*time.Second)
 		rsync(tmppath+"/*", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
 	}
 }
@@ -406,7 +406,7 @@ func rsync(source string, user string, host string, dest string) {
 	stdout, err := cmd.StderrPipe()
 	go io.Copy(os.Stdout, stdout)
 
-	err = cmd.Run()
+	err = cmd.Wait()
 	if err != nil {
 		fmt.Printf("rsync error %v\n", err)
 	}
