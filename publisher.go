@@ -130,7 +130,7 @@ func main() {
 func registrar(back chan *Chunk) {
 	for {
 		if config.Debug {
-			time.Sleep(10*time.Second)
+			time.Sleep(20*time.Second)
 		} else {
 			time.Sleep(5*time.Minute)
 		}
