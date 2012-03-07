@@ -38,6 +38,7 @@ type Config struct {
 	LastBuildTime string
 	LastPinboardCheck string
 	Debug bool
+	Publish bool
 }
 
 type RDF struct {
@@ -350,9 +351,8 @@ func rebuildSite() {
 	
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
-	if !config.Debug {
-		time.Sleep(1*time.Second)
-		rsync(tmppath+"/*", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
+	if config.Publish {
+		rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
 	}
 }
 
@@ -400,13 +400,13 @@ func slugify(orig string) string {
 }
 
 func rsync(source string, user string, host string, dest string) {
-	fmt.Printf("rsync -azv "+source+" "+user+"@"+host+":"+dest+"\n")
+	fmt.Printf("rsync -rzv "+source+" "+user+"@"+host+":"+dest+"\n")
 	
-	cmd := exec.Command("rsync", "-azv", source, user + "@" + host + ":" + dest)
+	cmd := exec.Command("rsync", "-rzv", source, user + "@" + host + ":" + dest)
 	stdout, err := cmd.StderrPipe()
 	go io.Copy(os.Stdout, stdout)
 
-	err = cmd.Wait()
+	err = cmd.Run()
 	if err != nil {
 		fmt.Printf("rsync error %v\n", err)
 	}
