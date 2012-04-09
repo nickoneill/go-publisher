@@ -5,6 +5,7 @@ import (
 	"time"
 	"io/ioutil"
 	"net/http"
+	"html"
 	"encoding/json"
 	"encoding/xml"
 	"strings"
@@ -13,7 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"github.com/garyburd/go-oauth"
+	"github.com/garyburd/go-oauth/oauth"
 	"github.com/nickoneill/go-dropbox"
 	"launchpad.net/goyaml"
 	"github.com/drhodes/mustache.go"
@@ -60,6 +61,7 @@ type Post struct {
 	Date string
 	RFC3339Date string
 	Content string
+	Excerpt string
 	Filename string
 	Atomid string
 }
@@ -269,6 +271,7 @@ func rebuildSite() {
 	posttemplate, _ := db.GetFile("templates/post.mustache")
 	hometemplate, _ := db.GetFile("templates/home.mustache")
 	feedtemplate, _ := db.GetFile("templates/feed.mustache")
+	archivetemplate, _ := db.GetFile("templates/archive.mustache")
 	
 	tmppath, err := ioutil.TempDir("","gopub")
 	if err != nil {
@@ -293,6 +296,7 @@ func rebuildSite() {
 			
 			goyaml.Unmarshal([]byte(parts[1]), &p)
 			p.Content = string(blackfriday.MarkdownCommon([]byte(parts[2])))
+			p.Excerpt = html.EscapeString(p.Content[0:200])
 			p.Filename = slugify(p.Title)+".html"
 			// TODO: check for partial yaml and fill it
 			
@@ -327,10 +331,10 @@ func rebuildSite() {
 	
 	// build the home file
 	homeposts := []Post{}
-	if len(pc.Posts) < 10 {
+	if len(pc.Posts) < 12 {
 		homeposts = pc.Posts[:]
 	} else {
-		homeposts = pc.Posts[:10]
+		homeposts = pc.Posts[:12]
 	}
 	
 	home := mustache.Render(hometemplate, map[string]interface{}{"posts": homeposts})
@@ -340,14 +344,21 @@ func rebuildSite() {
 	
 	// build the feed file
 	feedposts := []Post{}
-	if len(pc.Posts) < 10 {
+	if len(pc.Posts) < 12 {
 		feedposts = pc.Posts[:]
 	} else {
-		feedposts = pc.Posts[:10]
+		feedposts = pc.Posts[:12]
 	}
 	
 	feed := mustache.Render(feedtemplate, map[string]interface{}{"posts": feedposts, "updated": time.Now().Format(time.RFC3339)})
 	ioutil.WriteFile(tmppath+"/atom.xml", []byte(feed), 0644)
+
+	// build the archive file
+	archiveposts := []Post{}
+	archiveposts = pc.Posts[:]
+	
+	archive := mustache.Render(archivetemplate, map[string]interface{}{"posts": archiveposts})
+	ioutil.WriteFile(tmppath+"/archive.html", []byte(archive), 0644)
 	
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
