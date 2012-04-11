@@ -376,6 +376,17 @@ func rebuildSite() {
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
 	if config.Publish {
+		// copy files in resources to tmp
+		resources := db.GetFileMeta("resources")
+		for _, textfile := range resources.Contents {
+			source, err := db.GetFile(textfile.Path)
+			if err != nil {
+				fmt.Printf("error getting resource: %v\n",err)
+			}
+
+			filename := strings.Replace(textfile.Path, "/resources/", "", 1)
+			ioutil.WriteFile(tmppath+"/"+filename, []byte(source), 0644)
+		}
 		rsync(tmppath+"/", config.Rsync.Username, config.Rsync.Domain, config.Rsync.RemoteDir)
 	}
 }
