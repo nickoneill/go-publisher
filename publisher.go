@@ -37,13 +37,20 @@ type Config struct {
 	DropboxSecret string
 	OauthCredentials *oauth.Credentials
 	LastBuildTime string
+	PinboardFeedURL string
 	LastPinboardCheck string
+	Rsync *RsyncOptions
 	Debug bool
 	Publish bool
 }
 
+type RsyncOptions struct {
+	Domain string
+	Username string
+	RemoteDir string
+}
+
 type RDF struct {
-	//XMLName xml.Name `xml:"rdf"`
 	Items []PinboardItem `xml:"item"`
 }
 
@@ -111,7 +118,9 @@ func main() {
 		callback := make(chan *Chunk)
 
 		// add new document creation jobs here
-		go pinboardscape()
+		if (config.PinboardFeedURL != "") {
+			go pinboardscape()
+		}
 
 		go registrar(callback)
 
@@ -199,7 +208,7 @@ func registrar(back chan *Chunk) {
 func pinboardscape() {
 	for {
 		fmt.Printf("fetching pinboard feed\n")
-		res, err := http.Get("http://feeds.pinboard.in/rss/secret:861dae43105f37e6b08c/u:nickoneill/t:nickoneillblog/")
+		res, err := http.Get(config.PinboardFeedURL)
 		if err != nil {
 			fmt.Printf("error getting feed: %v\n",err)
 		}
@@ -296,7 +305,11 @@ func rebuildSite() {
 			
 			goyaml.Unmarshal([]byte(parts[1]), &p)
 			p.Content = string(blackfriday.MarkdownCommon([]byte(parts[2])))
-			p.Excerpt = html.EscapeString(p.Content[0:200])
+			if len(parts[2]) > 200 { // trim for excerpt
+				p.Excerpt = html.EscapeString(parts[2][0:200])
+			} else {
+				p.Excerpt = parts[2]
+			}
 			p.Filename = slugify(p.Title)+".html"
 			// TODO: check for partial yaml and fill it
 			
@@ -363,7 +376,7 @@ func rebuildSite() {
 	fmt.Printf("Done site generation at %v\n",tmppath)
 	
 	if config.Publish {
-		rsync(tmppath+"/", "nickoneill", "nickoneill.name", "/var/www/blog.nickoneill.name/public_html/")
+		rsync(tmppath+"/", config.Rsync.Username, config.Rsync.Domain, config.Rsync.RemoteDir)
 	}
 }
 
@@ -387,7 +400,7 @@ func authDropbox() {
 }
 
 func generateAtomId(p Post) string {
-	pre := "tag:blog.nickoneill.name,"
+	pre := fmt.Sprintf("tag:%s,",config.Rsync.Domain)
 	date, _ := time.Parse(time.RFC3339, p.RFC3339Date)
 	formatdate := date.Format("2006-01-15")
 	perm := ":/"+p.Filename
