@@ -19,19 +19,7 @@ Also, go-publisher is a dumb name. It needs something clever.
 
 Go1 compatible.
 
-For installation, run these commands to install the dependencies in your preferred GOPATH.
-
-`go get github.com/garyburd/go-oauth`
-
-`go get github.com/nickoneill/go-dropbox`
-
-`go get launchpad.net/goyaml`
-
-`go get github.com/russross/blackfriday`
-
-`go get github.com/drhodes/mustache.go`
-
-Then `git clone http://github.com/nickoneill/go-publisher` in your `src` of GOPATH.
+Use `git clone http://github.com/nickoneill/go-publisher` in your `src` of GOPATH.
 
 `cd go-publisher` and `cp config.json.ex config.json` before filling in some details in the config file, like your Dropbox key, secret and your Rsync details.
 
