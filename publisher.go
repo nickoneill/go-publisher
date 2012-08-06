@@ -66,6 +66,7 @@ type Post struct {
 	Published bool
 	Title string
 	Date string
+	NiceDate string
 	RFC3339Date string
 	Content string
 	Excerpt string
@@ -189,8 +190,6 @@ func registrar(back chan *Chunk) {
 
 			// TODO: only rebuild newer posts? here? in rebuild?
 			if needsrebuild {
-				config.LastBuildTime = time.Now().Format(time.RFC3339)
-				_ = save("config.json")
 				back <- &Chunk{Command: "republish"}
 			} else {
 				fmt.Println("no changes to be rebuilt")
@@ -256,6 +255,7 @@ func pinboardscape() {
 					filename := slugify(item.Title)
 					
 					out := mustache.Render(string(sourcetemplate), map[string]interface{}{"post": &item})
+					// TODO: check the path for existing file, raise a warning if a file exists at this path already
 					db.PutFile("source/"+filename+".md", out)
 				}
 			}
@@ -301,6 +301,7 @@ func rebuildSite() {
 		if strings.HasPrefix(text, "---") {
 			p := Post{}
 			
+			// fmt.Printf("%v: %v",textfile.Path,[]byte(text[0:5]))
 			parts := strings.SplitN(text, "---\n", 3)
 			
 			goyaml.Unmarshal([]byte(parts[1]), &p)
@@ -320,6 +321,7 @@ func rebuildSite() {
 					fmt.Printf("Can't parse date for this post: %v\n",p.Date)
 				}
 				p.RFC3339Date = date.Format(time.RFC3339)
+				p.NiceDate = date.Format("January 2, 2006")
 				p.Atomid = generateAtomId(p)
 				pc.Posts = append(pc.Posts, p)
 				
@@ -387,7 +389,13 @@ func rebuildSite() {
 			filename := strings.Replace(textfile.Path, "/resources/", "", 1)
 			ioutil.WriteFile(tmppath+"/"+filename, []byte(source), 0644)
 		}
+
+		// rsync to specified server
 		rsync(tmppath+"/", config.Rsync.Username, config.Rsync.Domain, config.Rsync.RemoteDir)
+
+		// save last build time
+		config.LastBuildTime = time.Now().Format(time.RFC3339)
+		_ = save("config.json")
 	}
 }
 
